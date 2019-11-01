@@ -1,0 +1,75 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: '${execution["application"]}'
+  namespace: '${parameters["namespace"]}'
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/maxScale: '${parameters["maxScale"]}'
+        autoscaling.knative.dev/minScale: '${parameters["minScale"]}'
+      labels:
+        prometheus-monitoring: user-port
+      name: '${NewRevisionName}'
+    spec:
+      containerConcurrency: 0
+      containers:
+        - envFrom:
+            - configMapRef:
+                name: default
+          image: '${trigger.artifacts[0].reference}'
+          livenessProbe:
+            failureThreshold: 10
+            httpGet:
+              path: '${parameters["livenessEndpoint"]}'
+              port: 0
+            initialDelaySeconds: 10
+            periodSeconds: 2
+            timeoutSeconds: 3
+          name: user-container
+          readinessProbe:
+            failureThreshold: 10
+            httpGet:
+              path: '${parameters["readinessEndpoint"]}'
+              port: 0
+            initialDelaySeconds: 6
+            periodSeconds: 2
+            successThreshold: 1
+            timeoutSeconds: 2
+          resources:
+            limits:
+              cpu: '${parameters["limitsCpu"]}'
+              memory: '${parameters["limitsMemory"]}'
+            requests:
+              cpu: '${parameters["requestsCpu"]}'
+              memory: '${parameters["requestsMemory"]}'
+          volumeMounts:
+            - mountPath: /etc/secret
+              name: '${execution["application"]}-sc'
+              readOnly: true
+            - mountPath: /etc/config
+              name: '${execution["application"]}-cm'
+              readOnly: true
+      serviceAccountName: '${parameters["namespace"]}'
+      timeoutSeconds: 300
+      volumes:
+        - configMap:
+            name: '${execution["application"]}-cm'
+          name: '${execution["application"]}-cm'
+        - name: '${execution["application"]}-sc'
+          secret:
+            secretName: '${execution["application"]}-sc'
+  traffic:
+    - latestRevision: true
+      percent: 0
+      tag: latest
+    - latestRevision: false
+      percent: 100
+      revisionName: '${ProductionRevisionName}'
+      tag: prod
+    - latestRevision: false
+      percent: 0
+      revisionName: '${NewRevisionName}'
+      tag: rc
+
